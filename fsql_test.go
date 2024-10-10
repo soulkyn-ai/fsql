@@ -2,18 +2,19 @@
 package fsql
 
 import (
+	"database/sql"
 	"flag"
 	"fmt"
 	"log"
 	"math"
 	"os"
 	"testing"
+	"time"
 
-	"github.com/jmoiron/sqlx"
-	_ "github.com/lib/pq"
+	_ "github.com/lib/pq" // PostgreSQL driver
 )
 
-type AIModel struct {
+type AIModelTest struct {
 	UUID                  NullString `json:"UUID" db:"uuid" dbMode:"i"`
 	Key                   NullString `json:"Key" db:"key" dbMode:"i,u"`
 	Name                  NullString `json:"Name" db:"name" dbMode:"i,u" dbInsertValue:"NULL"`
@@ -23,10 +24,26 @@ type AIModel struct {
 	Settings              NullString `json:"Settings" db:"settings" dbMode:"i,u" dbInsertValue:"NULL"`
 	DefaultNegativePrompt NullString `json:"DefaultNegativePrompt" db:"default_negative_prompt" dbMode:"i,u" dbInsertValue:"NULL"`
 }
+type RealmTest struct {
+	UUID      string      `json:"UUID" db:"uuid" dbMode:"i"`
+	CreatedAt *CustomTime `json:"CreatedAt" db:"created_at" dbMode:"i" dbInsertValue:"NOW()"`
+	UpdatedAt *CustomTime `json:"UpdatedAt" db:"updated_at" dbMode:"i,u" dbInsertValue:"NOW()"`
+	Name      string      `json:"Name" db:"name" dbMode:"i,u"`
+}
+
+type WebsiteTest struct {
+	UUID      string     `json:"UUID" db:"uuid" dbMode:"i"`
+	CreatedAt CustomTime `json:"CreatedAt" db:"created_at" dbMode:"i" dbInsertValue:"NOW()"`
+	UpdatedAt CustomTime `json:"UpdatedAt" db:"updated_at" dbMode:"i" dbInsertValue:"NOW()"`
+	Domain    string     `json:"Domain" db:"domain" dbMode:"i,u"`
+	Realm     *RealmTest `json:"Realm,omitempty" db:"r" dbMode:"l"`
+	RealmUUID string     `json:"RealmUUID" db:"realm_uuid" dbMode:"i"`
+}
 
 var (
-	aiModelBaseQuery string
-	db               *sqlx.DB
+	aiModelBaseQuery       string
+	realmQuerySelectBase   string
+	websiteQuerySelectBase string
 )
 
 func TestMain(m *testing.M) {
@@ -40,14 +57,15 @@ func TestMain(m *testing.M) {
 	// Parse flags
 	flag.Parse()
 
+	// Initialize model cache
+	InitAIModel()
+	initRealmModel()
+	initWebsiteModel()
+
 	// Initialize the database connection
 	connStr := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=disable",
 		*dbHost, *dbPort, *dbUser, *dbPassword, *dbName)
 	InitDB(connStr)
-	db = Db
-
-	// Initialize model cache
-	InitAIModel()
 
 	// Run tests
 	code := m.Run()
@@ -57,17 +75,27 @@ func TestMain(m *testing.M) {
 		log.Fatalf("Failed to clean database: %v", err)
 	}
 
-	db.Close()
+	Db.Close()
 	os.Exit(code)
 }
 
 func InitAIModel() {
-	InitModelTagCache(AIModel{}, "ai_model")
+	InitModelTagCache(AIModelTest{}, "ai_model")
 	aiModelBaseQuery = SelectBase("ai_model", "").Build()
 }
 
+func initRealmModel() {
+	InitModelTagCache(RealmTest{}, "realm")
+	realmQuerySelectBase = SelectBase("realm", "realm").Build()
+}
+
+func initWebsiteModel() {
+	InitModelTagCache(WebsiteTest{}, "website")
+	websiteQuerySelectBase = SelectBase("website", "website").Left("realm", "r", "website.realm_uuid = r.uuid").Build()
+}
+
 func cleanDatabase() error {
-	_, err := db.Exec(`TRUNCATE TABLE ai_model RESTART IDENTITY CASCADE`)
+	_, err := Db.Exec(`TRUNCATE TABLE ai_model, website, realm RESTART IDENTITY CASCADE`)
 	return err
 }
 
@@ -78,7 +106,7 @@ func TestAIModelInsertAndFetch(t *testing.T) {
 	}
 
 	// Insert a new AIModel
-	aiModel := AIModel{
+	aiModel := AIModelTest{
 		Key:      *NewNullString("test_key"),
 		Name:     *NewNullString("Test Model"),
 		Type:     *NewNullString("test_type"),
@@ -112,7 +140,7 @@ func TestListAIModel(t *testing.T) {
 
 	// Insert multiple AIModels
 	for i := 1; i <= 50; i++ {
-		aiModel := AIModel{
+		aiModel := AIModelTest{
 			Key:      *NewNullString(fmt.Sprintf("key_%d", i)),
 			Name:     *NewNullString(fmt.Sprintf("Model %d", i)),
 			Type:     *NewNullString("test_type"),
@@ -151,18 +179,84 @@ func TestListAIModel(t *testing.T) {
 	}
 }
 
-func AIModelByUUID(uuidStr string) (*AIModel, error) {
-	query := aiModelBaseQuery + ` WHERE "ai_model".uuid = $1 LIMIT 1`
-	model := AIModel{}
+func TestLinkedFields(t *testing.T) {
+	// Clean the database before the test
+	if err := cleanDatabase(); err != nil {
+		t.Fatalf("Failed to clean database: %v", err)
+	}
 
-	err := db.Get(&model, query, uuidStr)
+	// Initialize models
+	initRealmModel()
+	initWebsiteModel()
+
+	// Insert a new Realm
+	realm := RealmTest{
+		UUID:      GenNewUUID(""),
+		Name:      "Test Realm",
+		CreatedAt: NewCustomTime(time.Now()),
+		UpdatedAt: NewCustomTime(time.Now()),
+	}
+	query, args := GetInsertQuery("realm", map[string]interface{}{
+		"uuid":       realm.UUID,
+		"name":       realm.Name,
+		"created_at": realm.CreatedAt,
+		"updated_at": realm.UpdatedAt,
+	}, "")
+	_, err := Db.Exec(query, args...)
+	if err != nil {
+		t.Fatalf("Failed to insert realm: %v", err)
+	}
+
+	// Insert a new Website linked to the Realm
+	website := WebsiteTest{
+		UUID:      GenNewUUID(""),
+		Domain:    "example.com",
+		RealmUUID: realm.UUID,
+		CreatedAt: *NewCustomTime(time.Now()),
+		UpdatedAt: *NewCustomTime(time.Now()),
+	}
+	query, args = GetInsertQuery("website", map[string]interface{}{
+		"uuid":       website.UUID,
+		"domain":     website.Domain,
+		"realm_uuid": website.RealmUUID,
+		"created_at": website.CreatedAt,
+		"updated_at": website.UpdatedAt,
+	}, "")
+	_, err = Db.Exec(query, args...)
+	if err != nil {
+		t.Fatalf("Failed to insert website: %v", err)
+	}
+
+	// Fetch the Website along with the linked Realm
+	fetchedWebsite, err := GetWebsiteByUUID(website.UUID)
+	if err != nil {
+		t.Fatalf("Error fetching website: %v", err)
+	}
+
+	// Verify that the linked Realm is correctly fetched
+	if fetchedWebsite.Realm == nil {
+		t.Fatalf("Expected linked Realm, got nil")
+	}
+	if fetchedWebsite.Realm.UUID != realm.UUID {
+		t.Errorf("Expected Realm UUID %s, got %s", realm.UUID, fetchedWebsite.Realm.UUID)
+	}
+	if fetchedWebsite.Realm.Name != realm.Name {
+		t.Errorf("Expected Realm Name %s, got %s", realm.Name, fetchedWebsite.Realm.Name)
+	}
+}
+
+func AIModelByUUID(uuidStr string) (*AIModelTest, error) {
+	query := aiModelBaseQuery + ` WHERE "ai_model".uuid = $1 LIMIT 1`
+	model := AIModelTest{}
+
+	err := Db.Get(&model, query, uuidStr)
 	if err != nil {
 		return nil, err
 	}
 	return &model, nil
 }
 
-func (m *AIModel) Insert() error {
+func (m *AIModelTest) Insert() error {
 	query, queryValues := GetInsertQuery("ai_model", map[string]interface{}{
 		"uuid":        GenNewUUID(""),
 		"key":         m.Key,
@@ -173,7 +267,7 @@ func (m *AIModel) Insert() error {
 		"settings":    m.Settings,
 	}, "uuid")
 
-	err := db.QueryRow(query, queryValues...).Scan(&m.UUID)
+	err := Db.QueryRow(query, queryValues...).Scan(&m.UUID)
 	if err != nil {
 		return err
 	}
@@ -181,7 +275,7 @@ func (m *AIModel) Insert() error {
 	return nil
 }
 
-func ListAIModel(filters *Filter, sort *Sort, perPage int, page int) (*[]AIModel, *Pagination, error) {
+func ListAIModel(filters *Filter, sort *Sort, perPage int, page int) (*[]AIModelTest, *Pagination, error) {
 	if sort == nil || len(*sort) == 0 {
 		sort = &Sort{
 			"Type": "ASC",
@@ -193,8 +287,8 @@ func ListAIModel(filters *Filter, sort *Sort, perPage int, page int) (*[]AIModel
 		return nil, nil, err
 	}
 
-	models := []AIModel{}
-	err = db.Select(&models, query, args...)
+	models := []AIModelTest{}
+	err = Db.Select(&models, query, args...)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -212,4 +306,19 @@ func ListAIModel(filters *Filter, sort *Sort, perPage int, page int) (*[]AIModel
 	}
 
 	return &models, &pagination, nil
+}
+
+func GetWebsiteByUUID(uuid string) (*WebsiteTest, error) {
+	query := websiteQuerySelectBase + ` WHERE "website".uuid = $1 LIMIT 1`
+	website := WebsiteTest{}
+
+	err := Db.Get(&website, query, uuid)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	return &website, nil
 }

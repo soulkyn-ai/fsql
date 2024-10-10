@@ -5,7 +5,7 @@ import (
 	"log"
 	"time"
 
-	"github.com/jmoiron/sqlx"
+	"github.com/jmoiron/sqlx" // SQL library
 	_ "github.com/lib/pq" // PostgreSQL driver
 )
 

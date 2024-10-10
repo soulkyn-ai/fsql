@@ -20,6 +20,7 @@ type modelInfo struct {
 	dbFieldsSelectMap map[string]struct{}
 	dbFieldsInsertMap map[string]struct{}
 	dbFieldsUpdateMap map[string]struct{}
+	linkedFields      map[string]string // FieldName -> TableAlias
 }
 
 // InitModelTagCache initializes the model metadata cache
@@ -36,6 +37,7 @@ func InitModelTagCache(model interface{}, tableName string) {
 	dbFieldsSelectMap := make(map[string]struct{})
 	dbFieldsInsertMap := make(map[string]struct{})
 	dbFieldsUpdateMap := make(map[string]struct{})
+	linkedFields := make(map[string]string)
 
 	for i := 0; i < modelType.NumField(); i++ {
 		field := modelType.Field(i)
@@ -53,11 +55,17 @@ func InitModelTagCache(model interface{}, tableName string) {
 			modeFlags[mode] = true
 		}
 
-		if modeFlags["s"] || modeFlags["link"] {
+		if modeFlags["l"] || modeFlags["link"] {
+			// Handle linked fields
+			linkedFields[field.Name] = dbTagValue // Store struct field name -> table alias
 			continue
 		}
 
 		dbTagMap[field.Name] = dbTagValue
+
+		if modeFlags["s"] {
+			continue
+		}
 
 		if modeFlags["i"] {
 			dbFieldsInsert = append(dbFieldsInsert, dbTagValue)
@@ -70,10 +78,8 @@ func InitModelTagCache(model interface{}, tableName string) {
 			dbFieldsUpdate = append(dbFieldsUpdate, dbTagValue)
 			dbFieldsUpdateMap[dbTagValue] = struct{}{}
 		}
-		if !modeFlags["link"] && !modeFlags["s"] {
-			dbFieldsSelect = append(dbFieldsSelect, dbTagValue)
-			dbFieldsSelectMap[dbTagValue] = struct{}{}
-		}
+		dbFieldsSelect = append(dbFieldsSelect, dbTagValue)
+		dbFieldsSelectMap[dbTagValue] = struct{}{}
 	}
 
 	modelInfo := &modelInfo{
@@ -85,6 +91,7 @@ func InitModelTagCache(model interface{}, tableName string) {
 		dbFieldsSelectMap: dbFieldsSelectMap,
 		dbFieldsInsertMap: dbFieldsInsertMap,
 		dbFieldsUpdateMap: dbFieldsUpdateMap,
+		linkedFields:      linkedFields,
 	}
 
 	modelFieldsCache.Set(tableName, modelInfo)
@@ -132,11 +139,13 @@ func getFieldsByMode(tableName, mode, aliasTableName string) ([]string, []string
 	}
 
 	for _, fieldName := range dbFields {
+		quotedTableName := `"` + strings.ReplaceAll(tableName, `"`, ``) + `"`
+		quotedFieldName := `"` + strings.ReplaceAll(fieldName, `"`, ``) + `"`
 		if aliasTableName != "" {
-			alias := strings.ReplaceAll(aliasTableName, `"`, "")
-			fields = append(fields, fmt.Sprintf(`"%s".%s AS "%s.%s"`, alias, fieldName, alias, fieldName))
+			aliasTableName = strings.ReplaceAll(aliasTableName, `"`, "")
+			fields = append(fields, `"`+aliasTableName+`".`+quotedFieldName+` AS "`+aliasTableName+`.`+fieldName+`"`)
 		} else {
-			fields = append(fields, fmt.Sprintf(`"%s".%s`, tableName, fieldName))
+			fields = append(fields, quotedTableName+"."+quotedFieldName)
 		}
 		fieldNames = append(fieldNames, fieldName)
 	}

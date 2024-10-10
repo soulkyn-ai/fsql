@@ -1,4 +1,3 @@
-// orm.go
 package fsql
 
 import (
@@ -24,75 +23,56 @@ func GetInsertQuery(tableName string, valuesMap map[string]interface{}, returnin
 	_, fields := GetInsertFields(tableName)
 	defaultValues := GetInsertValues(tableName)
 
-	var columns []string
-	var placeholders []string
-	var queryValues []interface{}
+	placeholders := []string{}
+	queryValues := []interface{}{}
 	counter := 1
-
 	for _, field := range fields {
-		columns = append(columns, field)
 		if val, ok := valuesMap[field]; ok {
+			// If value is provided in valuesMap, use it
 			placeholders = append(placeholders, fmt.Sprintf("$%d", counter))
 			queryValues = append(queryValues, val)
 			counter++
 		} else if defVal, ok := defaultValues[field]; ok {
-			if isSQLFunction(defVal) {
+			// Else use the default value from tags
+			if defVal == "NOW()" || defVal == "NULL" || defVal == "true" || defVal == "false" || defVal == "DEFAULT" {
 				placeholders = append(placeholders, defVal)
 			} else {
 				placeholders = append(placeholders, fmt.Sprintf("$%d", counter))
 				queryValues = append(queryValues, defVal)
 				counter++
 			}
-		} else {
-			placeholders = append(placeholders, "DEFAULT")
 		}
 	}
 
-	query := fmt.Sprintf(`INSERT INTO "%s" (%s) VALUES (%s)`, tableName, strings.Join(columns, ","), strings.Join(placeholders, ","))
-	if returning != "" {
-		query += fmt.Sprintf(` RETURNING "%s"`, returning)
+	query := fmt.Sprintf(`INSERT INTO "%s" (%s) VALUES (%s)`, tableName, strings.Join(fields, ","), strings.Join(placeholders, ","))
+	if len(returning) > 0 {
+		query += fmt.Sprintf(` RETURNING "%s".%s`, tableName, returning)
 	}
 	return query, queryValues
 }
 
-func isSQLFunction(value string) bool {
-	functions := map[string]struct{}{
-		"NOW()":   {},
-		"NULL":    {},
-		"true":    {},
-		"false":   {},
-		"DEFAULT": {},
-	}
-	_, exists := functions[value]
-	return exists
-}
-
 func GetUpdateQuery(tableName string, valuesMap map[string]interface{}, returning string) (string, []interface{}) {
 	_, fields := GetUpdateFields(tableName)
-
-	var setClauses []string
-	var queryValues []interface{}
+	setClauses := []string{}
+	queryValues := []interface{}{}
 	counter := 1
 
 	for _, field := range fields {
 		if value, exists := valuesMap[field]; exists {
-			setClauses = append(setClauses, fmt.Sprintf(`%s = $%d`, field, counter))
+			setClause := fmt.Sprintf(`%s = $%d`, field, counter)
+
+			setClauses = append(setClauses, setClause)
 			queryValues = append(queryValues, value)
 			counter++
 		}
 	}
 
-	if len(setClauses) == 0 {
-		panic("No fields to update")
+	query := fmt.Sprintf(`UPDATE "%s" SET %s WHERE "%s"."%s" = $%d RETURNING "%s".%s`, tableName, strings.Join(setClauses, ", "), tableName, returning, counter, tableName, returning)
+	uuidValue, uuidExists := valuesMap[returning]
+	if !uuidExists {
+		panic(fmt.Sprintf("UUID not found in valuesMap: %v", valuesMap))
 	}
-
-	primaryKey, pkExists := valuesMap[returning]
-	if !pkExists {
-		panic("Primary key not found in valuesMap")
-	}
-
-	query := fmt.Sprintf(`UPDATE "%s" SET %s WHERE "%s" = $%d RETURNING "%s"`, tableName, strings.Join(setClauses, ", "), returning, counter, returning)
-	queryValues = append(queryValues, primaryKey)
+	queryValues = append(queryValues, uuidValue)
 
 	return query, queryValues
 }
@@ -119,17 +99,17 @@ func (qb *QueryBuilder) Build() string {
 	fields := strings.Join(fieldsArray, ",")
 
 	for _, join := range qb.Joins {
-		joinFields, _ := GetSelectFields(join.Table, join.TableAlias)
-		fields += ", " + strings.Join(joinFields, ",")
+		fieldsArray, _ := GetSelectFields(join.Table, join.TableAlias)
+		fields += ", " + strings.Join(fieldsArray, ",")
 	}
 
 	var joins []string
 	for _, join := range qb.Joins {
-		table := fmt.Sprintf(`"%s"`, join.Table)
+		table := join.Table
 		if join.TableAlias != "" {
-			table = fmt.Sprintf(`"%s" AS "%s"`, join.Table, join.TableAlias)
+			table = fmt.Sprintf(`"%s" AS %s`, join.Table, join.TableAlias)
 		}
-		joins = append(joins, fmt.Sprintf(`%s %s ON %s`, join.JoinType, table, join.OnCondition))
+		joins = append(joins, fmt.Sprintf(` %s %s ON %s `, join.JoinType, table, join.OnCondition))
 	}
 
 	return fmt.Sprintf(`SELECT %s FROM "%s" %s`, fields, qb.Table, strings.Join(joins, " "))
