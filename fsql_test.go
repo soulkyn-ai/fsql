@@ -164,7 +164,7 @@ func AIModelByUUID(uuidStr string) (*AIModel, error) {
 
 func (m *AIModel) Insert() error {
 	query, queryValues := GetInsertQuery("ai_model", map[string]interface{}{
-		"uuid":        GenNewUUID(),
+		"uuid":        GenNewUUID(""),
 		"key":         m.Key,
 		"name":        m.Name,
 		"description": m.Description,

@@ -135,6 +135,6 @@ func (qb *QueryBuilder) Build() string {
 	return fmt.Sprintf(`SELECT %s FROM "%s" %s`, fields, qb.Table, strings.Join(joins, " "))
 }
 
-func GenNewUUID() string {
+func GenNewUUID(table string) string {
 	return uuid.New().String()
 }
