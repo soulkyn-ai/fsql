@@ -449,3 +449,37 @@ func NewNullFloat64FromString(s string) *NullFloat64 {
 func NewNullFloat64(s float64) *NullFloat64 {
 	return &NullFloat64{sql.NullFloat64{Float64: s, Valid: true}}
 }
+
+type IntDictionary map[string]int
+
+// Scan implements the sql.Scanner interface.
+func (id *IntDictionary) Scan(value interface{}) error {
+	asBytes, ok := value.([]byte)
+	if !ok {
+		return errors.New("Scan source was not []byte")
+	}
+	err := json.Unmarshal(asBytes, id)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+// Value implements the driver.Valuer interface.
+func (id IntDictionary) Value() (driver.Value, error) {
+	return json.Marshal(id)
+}
+
+func (id *IntDictionary) UnmarshalJSON(data []byte) error {
+	var m map[string]int
+	if err := json.Unmarshal(data, &m); err != nil {
+		return err
+	}
+	*id = m
+	return nil
+}
+
+// MarshalJSON implements the json.Marshaler interface.
+func (id IntDictionary) MarshalJSON() ([]byte, error) {
+	return json.Marshal(map[string]int(id))
+}
