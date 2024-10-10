@@ -152,3 +152,31 @@ func GetFilterCount(query string, args []interface{}) (int, error) {
 	err := Db.QueryRow(query, args...).Scan(&count)
 	return count, err
 }
+
+func FilterQueryCustom(baseQuery string, t string, orderBy string, args []interface{}, perPage int, page int) (string, []interface{}, error) {
+	limit := perPage
+	offset := (page - 1) * perPage
+
+	baseQuery += fmt.Sprintf(" ORDER BY %s", orderBy)
+	baseQuery += fmt.Sprintf(" LIMIT %d OFFSET %d", limit, offset)
+	return baseQuery, args, nil
+}
+
+func BuildFilterCountCustom(baseQuery string) string {
+	parts := strings.Split(baseQuery, "FROM")
+	query := parts[1]
+
+	if strings.Contains(query, "LIMIT") {
+		query = strings.Split(query, "LIMIT")[0]
+	}
+
+	if strings.Contains(query, "ORDER BY") {
+		query = strings.Split(query, "ORDER BY")[0]
+	}
+
+	query = strings.TrimSuffix(query, " ")
+	query = strings.TrimSuffix(query, ",")
+
+	return "SELECT COUNT(*) FROM " + query
+
+}
