@@ -79,10 +79,10 @@ func TestAIModelInsertAndFetch(t *testing.T) {
 
 	// Insert a new AIModel
 	aiModel := AIModel{
-		Key:      NewNullString("test_key"),
-		Name:     NewNullString("Test Model"),
-		Type:     NewNullString("test_type"),
-		Provider: NewNullString("test_provider"),
+		Key:      *NewNullString("test_key"),
+		Name:     *NewNullString("Test Model"),
+		Type:     *NewNullString("test_type"),
+		Provider: *NewNullString("test_provider"),
 	}
 	err := aiModel.Insert()
 	if err != nil {
@@ -113,10 +113,10 @@ func TestListAIModel(t *testing.T) {
 	// Insert multiple AIModels
 	for i := 1; i <= 50; i++ {
 		aiModel := AIModel{
-			Key:      NewNullString(fmt.Sprintf("key_%d", i)),
-			Name:     NewNullString(fmt.Sprintf("Model %d", i)),
-			Type:     NewNullString("test_type"),
-			Provider: NewNullString("test_provider"),
+			Key:      *NewNullString(fmt.Sprintf("key_%d", i)),
+			Name:     *NewNullString(fmt.Sprintf("Model %d", i)),
+			Type:     *NewNullString("test_type"),
+			Provider: *NewNullString("test_provider"),
 		}
 		err := aiModel.Insert()
 		if err != nil {
