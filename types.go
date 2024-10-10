@@ -57,6 +57,15 @@ func NewCustomTimeInt64(int64Time int64) *CustomTime {
 	}
 }
 
+func NewCustomTimeFloat64(float64Time float64) *CustomTime {
+	return &CustomTime{
+		NullTime: sql.NullTime{
+			Time:  time.Unix(0, int64(float64Time)*int64(time.Millisecond)),
+			Valid: true,
+		},
+	}
+}
+
 func (ct *CustomTime) Scan(value interface{}) error {
 	if value == nil {
 		ct.Time, ct.Valid = time.Time{}, false
