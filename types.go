@@ -6,6 +6,7 @@ import (
 	"database/sql/driver"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strconv"
 	"time"
 )
@@ -56,7 +57,6 @@ func NewCustomTimeInt64(int64Time int64) *CustomTime {
 		},
 	}
 }
-
 func NewCustomTimeFloat64(float64Time float64) *CustomTime {
 	return &CustomTime{
 		NullTime: sql.NullTime{
@@ -65,7 +65,6 @@ func NewCustomTimeFloat64(float64Time float64) *CustomTime {
 		},
 	}
 }
-
 func (ct *CustomTime) Scan(value interface{}) error {
 	if value == nil {
 		ct.Time, ct.Valid = time.Time{}, false
@@ -81,7 +80,7 @@ func (ct *CustomTime) Scan(value interface{}) error {
 		// Parsing time from TimeResponse
 		t, err := time.Parse(time.RFC3339Nano, v.ISO)
 		if err != nil {
-			return err
+			return err // unable to parse time, handle error accordingly
 		}
 		ct.Time = t
 		ct.Valid = true
@@ -90,9 +89,17 @@ func (ct *CustomTime) Scan(value interface{}) error {
 		// Parsing time from TimeResponse
 		t, err := time.Parse(time.RFC3339Nano, v.ISO)
 		if err != nil {
-			return err
+			return err // unable to parse time, handle error accordingly
 		}
 		ct.Time = t
+		ct.Valid = true
+		return nil
+	case float64:
+		ct.Time = time.Unix(0, int64(v)*int64(time.Millisecond))
+		ct.Valid = true
+		return nil
+	case int:
+		ct.Time = time.Unix(0, int64(v)*int64(time.Millisecond))
 		ct.Valid = true
 		return nil
 	case int64:
@@ -102,8 +109,9 @@ func (ct *CustomTime) Scan(value interface{}) error {
 	case string:
 		// Support for the format: "1661-06-21"
 		t, err := time.Parse("2006-01-02", v)
+		fmt.Println(t, err)
 		if err != nil {
-			return err
+			return err // unable to parse time, handle error accordingly
 		}
 		ct.Time = t
 		ct.Valid = true
@@ -142,12 +150,37 @@ func (ct CustomTime) MarshalJSON() ([]byte, error) {
 }
 
 func (ct *CustomTime) UnmarshalJSON(b []byte) error {
+	// Attempt to unmarshal into TimeResponse first
 	var t TimeResponse
-	if err := json.Unmarshal(b, &t); err != nil {
-		var ts string
-		if err := json.Unmarshal(b, &ts); err != nil {
+	if err := json.Unmarshal(b, &t); err == nil && t.ISO != "" {
+		parsedTime, err := time.Parse(time.RFC3339Nano, t.ISO)
+		if err != nil {
 			return err
 		}
+		ct.Time = parsedTime
+		ct.Valid = true
+		return nil
+	}
+
+	// Attempt to unmarshal into an int64 (for Unix timestamp in milliseconds)
+	var unixms int64
+	if err := json.Unmarshal(b, &unixms); err == nil {
+		ct.Time = time.Unix(0, unixms*int64(time.Millisecond))
+		ct.Valid = true
+		return nil
+	}
+
+	// Attempt to unmarshal into a float64 (for Unix timestamp in milliseconds as float)
+	var floatUnixms float64
+	if err := json.Unmarshal(b, &floatUnixms); err == nil {
+		ct.Time = time.Unix(0, int64(floatUnixms)*int64(time.Millisecond))
+		ct.Valid = true
+		return nil
+	}
+
+	// Attempt to unmarshal into a string (date format)
+	var ts string
+	if err := json.Unmarshal(b, &ts); err == nil {
 		parsedTime, err := time.Parse("2006-01-02", ts)
 		if err != nil {
 			return err
@@ -157,19 +190,8 @@ func (ct *CustomTime) UnmarshalJSON(b []byte) error {
 		return nil
 	}
 
-	if t.ISO == "" {
-		ct.Valid = false
-		ct.Time = time.Time{}
-	} else {
-		parsedTime, err := time.Parse(time.RFC3339Nano, t.ISO)
-		if err != nil {
-			return err
-		}
-		ct.Time = parsedTime
-		ct.Valid = true
-	}
-
-	return nil
+	// If none of the above worked, return an error
+	return errors.New("invalid time format")
 }
 
 type NullString struct {
