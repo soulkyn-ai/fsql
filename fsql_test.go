@@ -11,33 +11,34 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Fy-/octypes"
 	_ "github.com/lib/pq" // PostgreSQL driver
 )
 
 type AIModelTest struct {
-	UUID                  NullString `json:"UUID" db:"uuid" dbMode:"i"`
-	Key                   NullString `json:"Key" db:"key" dbMode:"i,u"`
-	Name                  NullString `json:"Name" db:"name" dbMode:"i,u" dbInsertValue:"NULL"`
-	Description           NullString `json:"Description" db:"description" dbMode:"i,u" dbInsertValue:"NULL"`
-	Type                  NullString `json:"Type" db:"type" dbMode:"i,u"`
-	Provider              NullString `json:"Provider" db:"provider" dbMode:"i,u"`
-	Settings              NullString `json:"Settings" db:"settings" dbMode:"i,u" dbInsertValue:"NULL"`
-	DefaultNegativePrompt NullString `json:"DefaultNegativePrompt" db:"default_negative_prompt" dbMode:"i,u" dbInsertValue:"NULL"`
+	UUID                  octypes.NullString `json:"UUID" db:"uuid" dbMode:"i"`
+	Key                   octypes.NullString `json:"Key" db:"key" dbMode:"i,u"`
+	Name                  octypes.NullString `json:"Name" db:"name" dbMode:"i,u" dbInsertValue:"NULL"`
+	Description           octypes.NullString `json:"Description" db:"description" dbMode:"i,u" dbInsertValue:"NULL"`
+	Type                  octypes.NullString `json:"Type" db:"type" dbMode:"i,u"`
+	Provider              octypes.NullString `json:"Provider" db:"provider" dbMode:"i,u"`
+	Settings              octypes.NullString `json:"Settings" db:"settings" dbMode:"i,u" dbInsertValue:"NULL"`
+	DefaultNegativePrompt octypes.NullString `json:"DefaultNegativePrompt" db:"default_negative_prompt" dbMode:"i,u" dbInsertValue:"NULL"`
 }
 type RealmTest struct {
-	UUID      string      `json:"UUID" db:"uuid" dbMode:"i"`
-	CreatedAt *CustomTime `json:"CreatedAt" db:"created_at" dbMode:"i" dbInsertValue:"NOW()"`
-	UpdatedAt *CustomTime `json:"UpdatedAt" db:"updated_at" dbMode:"i,u" dbInsertValue:"NOW()"`
-	Name      string      `json:"Name" db:"name" dbMode:"i,u"`
+	UUID      string              `json:"UUID" db:"uuid" dbMode:"i"`
+	CreatedAt *octypes.CustomTime `json:"CreatedAt" db:"created_at" dbMode:"i" dbInsertValue:"NOW()"`
+	UpdatedAt *octypes.CustomTime `json:"UpdatedAt" db:"updated_at" dbMode:"i,u" dbInsertValue:"NOW()"`
+	Name      string              `json:"Name" db:"name" dbMode:"i,u"`
 }
 
 type WebsiteTest struct {
-	UUID      string     `json:"UUID" db:"uuid" dbMode:"i"`
-	CreatedAt CustomTime `json:"CreatedAt" db:"created_at" dbMode:"i" dbInsertValue:"NOW()"`
-	UpdatedAt CustomTime `json:"UpdatedAt" db:"updated_at" dbMode:"i" dbInsertValue:"NOW()"`
-	Domain    string     `json:"Domain" db:"domain" dbMode:"i,u"`
-	Realm     *RealmTest `json:"Realm,omitempty" db:"r" dbMode:"l"`
-	RealmUUID string     `json:"RealmUUID" db:"realm_uuid" dbMode:"i"`
+	UUID      string             `json:"UUID" db:"uuid" dbMode:"i"`
+	CreatedAt octypes.CustomTime `json:"CreatedAt" db:"created_at" dbMode:"i" dbInsertValue:"NOW()"`
+	UpdatedAt octypes.CustomTime `json:"UpdatedAt" db:"updated_at" dbMode:"i" dbInsertValue:"NOW()"`
+	Domain    string             `json:"Domain" db:"domain" dbMode:"i,u"`
+	Realm     *RealmTest         `json:"Realm,omitempty" db:"r" dbMode:"l"`
+	RealmUUID string             `json:"RealmUUID" db:"realm_uuid" dbMode:"i"`
 }
 
 var (
@@ -107,10 +108,10 @@ func TestAIModelInsertAndFetch(t *testing.T) {
 
 	// Insert a new AIModel
 	aiModel := AIModelTest{
-		Key:      *NewNullString("test_key"),
-		Name:     *NewNullString("Test Model"),
-		Type:     *NewNullString("test_type"),
-		Provider: *NewNullString("test_provider"),
+		Key:      *octypes.NewNullString("test_key"),
+		Name:     *octypes.NewNullString("Test Model"),
+		Type:     *octypes.NewNullString("test_type"),
+		Provider: *octypes.NewNullString("test_provider"),
 	}
 	err := aiModel.Insert()
 	if err != nil {
@@ -141,10 +142,10 @@ func TestListAIModel(t *testing.T) {
 	// Insert multiple AIModels
 	for i := 1; i <= 50; i++ {
 		aiModel := AIModelTest{
-			Key:      *NewNullString(fmt.Sprintf("key_%d", i)),
-			Name:     *NewNullString(fmt.Sprintf("Model %d", i)),
-			Type:     *NewNullString("test_type"),
-			Provider: *NewNullString("test_provider"),
+			Key:      *octypes.NewNullString(fmt.Sprintf("key_%d", i)),
+			Name:     *octypes.NewNullString(fmt.Sprintf("Model %d", i)),
+			Type:     *octypes.NewNullString("test_type"),
+			Provider: *octypes.NewNullString("test_provider"),
 		}
 		err := aiModel.Insert()
 		if err != nil {
@@ -193,8 +194,8 @@ func TestLinkedFields(t *testing.T) {
 	realm := RealmTest{
 		UUID:      GenNewUUID(""),
 		Name:      "Test Realm",
-		CreatedAt: NewCustomTime(time.Now()),
-		UpdatedAt: NewCustomTime(time.Now()),
+		CreatedAt: octypes.NewCustomTime(time.Now()),
+		UpdatedAt: octypes.NewCustomTime(time.Now()),
 	}
 	query, args := GetInsertQuery("realm", map[string]interface{}{
 		"uuid":       realm.UUID,
@@ -212,8 +213,8 @@ func TestLinkedFields(t *testing.T) {
 		UUID:      GenNewUUID(""),
 		Domain:    "example.com",
 		RealmUUID: realm.UUID,
-		CreatedAt: *NewCustomTime(time.Now()),
-		UpdatedAt: *NewCustomTime(time.Now()),
+		CreatedAt: *octypes.NewCustomTime(time.Now()),
+		UpdatedAt: *octypes.NewCustomTime(time.Now()),
 	}
 	query, args = GetInsertQuery("website", map[string]interface{}{
 		"uuid":       website.UUID,
@@ -275,7 +276,7 @@ func (m *AIModelTest) Insert() error {
 	return nil
 }
 
-func ListAIModel(filters *Filter, sort *Sort, perPage int, page int) (*[]AIModelTest, *Pagination, error) {
+func ListAIModel(filters *Filter, sort *Sort, perPage int, page int) (*[]AIModelTest, *octypes.Pagination, error) {
 	if sort == nil || len(*sort) == 0 {
 		sort = &Sort{
 			"Type": "ASC",
@@ -298,7 +299,7 @@ func ListAIModel(filters *Filter, sort *Sort, perPage int, page int) (*[]AIModel
 	if err != nil {
 		return nil, nil, err
 	}
-	pagination := Pagination{
+	pagination := octypes.Pagination{
 		ResultsPerPage: perPage,
 		PageNo:         page,
 		Count:          count,
